@@ -80,6 +80,61 @@ TECHNOS = {
 }
 
 
+def sans_commentaires(texte: str) -> str:
+    """Retire les commentaires JSONC en respectant les chaînes.
+
+    Une expression régulière ne suffit pas : le chemin « "@/*" » d'un tsconfig
+    contient `/*`, qu'un retrait aveugle prend pour un début de commentaire et
+    qui emporte la moitié du fichier. Constaté sur signal42.
+    """
+    out = []
+    i, n = 0, len(texte)
+    dans_chaine = False
+    while i < n:
+        c = texte[i]
+        if dans_chaine:
+            out.append(c)
+            if c == "\\" and i + 1 < n:      # séquence échappée : on prend les deux
+                out.append(texte[i + 1]); i += 2; continue
+            if c == '"':
+                dans_chaine = False
+            i += 1
+            continue
+        if c == '"':
+            dans_chaine = True; out.append(c); i += 1; continue
+        if c == "/" and i + 1 < n:
+            if texte[i + 1] == "/":            # commentaire de ligne
+                while i < n and texte[i] != "\n":
+                    i += 1
+                continue
+            if texte[i + 1] == "*":            # commentaire de bloc
+                fin = texte.find("*/", i + 2)
+                i = n if fin == -1 else fin + 2
+                continue
+        out.append(c); i += 1
+    return "".join(out)
+
+
+def json_valide(texte: str) -> bool:
+    """JSON strict, sinon JSON avec commentaires.
+
+    Les fichiers de configuration TypeScript, ceux de l'éditeur et bien d'autres
+    admettent `//`, `/* */` et une virgule finale. C'est légal et répandu : les
+    refuser était un faux positif, constaté sur deux tsconfig de signal42.
+    """
+    try:
+        json.loads(texte)
+        return True
+    except Exception:  # noqa: BLE001
+        pass
+    sans = re.sub(r",(\s*[}\]])", r"\1", sans_commentaires(texte))
+    try:
+        json.loads(sans)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 class Verificateur:
     def __init__(self, racine: Path):
         self.racine = racine
@@ -140,7 +195,10 @@ class Verificateur:
             m = re.match(r"^\*\*Statut\*\*\s*:\s*([^·\n]+)", statut)
             valeur = m.group(1).strip() if m else ""
             base = re.sub(r"\s*\(.*?\)\s*", " ", valeur).strip()
-            if not (base.startswith("remplacé par") or base in self.etats):
+            # La casse n'est pas une convention : « Accepté » et « accepté »
+            # disent la même chose, et signal42 majusculise ses ADR.
+            bas = base.lower()
+            if not (bas.startswith("remplacé par") or bas in {e.lower() for e in self.etats}):
                 self.erreurs.append(
                     f"{rel} : état « {base} » hors de la liste admise. "
                     f"Admis : {', '.join(self.etats)}, remplacé par X."
@@ -392,12 +450,12 @@ class Verificateur:
             p = self.racine / s
             if not p.is_file():
                 continue
-            if p.suffix == ".json":
+            if p.suffix in {".json", ".jsonc"}:
                 nj += 1
-                try:
-                    json.loads(p.read_text(encoding="utf-8"))
-                except Exception as e:  # noqa: BLE001
-                    self.erreurs.append(f"{s} : JSON invalide ({e}).")
+                if not json_valide(p.read_text(encoding="utf-8", errors="ignore")):
+                    self.erreurs.append(
+                        f"{s} : JSON invalide, même en tolérant les commentaires."
+                    )
             elif p.suffix == ".py":
                 npy += 1
                 try:
