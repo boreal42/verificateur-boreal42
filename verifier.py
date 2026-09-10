@@ -21,8 +21,10 @@ contredire.
     6. chemins des exemples canoniques existants                    
     7. liens relatifs résolus
     8. aucun fichier sensible suivi par git
-       — les gabarits .env.example et consorts sont exclus : ils sont faits
-         pour être versionnés et ne portent jamais de valeur
+       — un fichier est sensible quand il CONTIENT un secret, pas quand il en
+         porte le nom : les gabarits .env.example sont exclus, et un fichier de
+         configuration JSON dont les valeurs sont des références d'environnement
+         l'est aussi
     9. aucune technologie citée par CLAUDE.md et absente du dépôt
    10. aucun marqueur « À REMPLIR » restant
 
@@ -255,15 +257,69 @@ class Verificateur:
 
     # --- 8 : secrets suivis ---------------------------------------------------
 
+    def _porte_une_valeur(self, chemin: Path) -> bool:
+        """Un fichier de configuration porte-t-il une valeur d'identification en clair ?
+
+        Un fichier est sensible quand il CONTIENT un secret, pas quand il porte un
+        nom qui y ressemble. Un fichier de configuration dont l'en-tête
+        d'autorisation vaut « Bearer ${JETON} » ne révèle rien : il désigne une
+        variable d'environnement. Le bloquer par son nom force à retirer de git un
+        fichier d'embarquement fait pour être partagé.
+
+        En cas de doute — fichier illisible, format inconnu — on répond « oui » :
+        mieux vaut un refus injustifié qu'un secret publié.
+        """
+        try:
+            texte = chemin.read_text(encoding="utf-8")
+        except OSError:
+            return True
+        try:
+            donnees = json.loads(texte)
+        except Exception:  # noqa: BLE001 — format inconnu, on n'affirme rien
+            return True
+
+        nommees = re.compile(r"(token|key|secret|password|passwd|auth|bearer|credential)", re.I)
+        reference = re.compile(r"^\s*(bearer\s+)?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?\s*$", re.I)
+
+        def parcourir(o) -> bool:
+            if isinstance(o, dict):
+                for cle, val in o.items():
+                    if isinstance(val, (dict, list)):
+                        if parcourir(val):
+                            return True
+                    elif nommees.search(str(cle)):
+                        v = str(val).strip()
+                        if v and not reference.match(v):
+                            return True
+            elif isinstance(o, list):
+                return any(parcourir(x) for x in o)
+            return False
+
+        return parcourir(donnees)
+
     def regle_secrets(self) -> list[str]:
         r = subprocess.run(
             ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
             capture_output=True, text=True, cwd=self.racine,
         )
         suivis = [s for s in r.stdout.split("\n") if s]
-        fuites = [s for s in suivis if SENSIBLE.search(s)]
+        fuites, innocentes = [], []
+        for s in suivis:
+            if not SENSIBLE.search(s):
+                continue
+            chemin = self.racine / s
+            if chemin.suffix == ".json" and chemin.is_file() and not self._porte_une_valeur(chemin):
+                innocentes.append(s)
+                continue
+            fuites.append(s)
         for s in fuites:
-            self.erreurs.append(f"{s} : fichier sensible suivi par git.")
+            self.erreurs.append(
+                f"{s} : fichier sensible suivi par git. Le retirer de l'index, "
+                f"faire tourner ce qu'il contenait, et l'ajouter au .gitignore."
+            )
+        for s in innocentes:
+            print(f"   {s} : porte le nom d'un fichier sensible, mais ne contient "
+                  f"aucune valeur en clair — seulement des références d'environnement")
         print(f"== secrets : {len(suivis)} fichiers suivis, {len(fuites)} sensible(s)")
         return suivis
 
@@ -377,6 +433,12 @@ class Verificateur:
 
 
 def main() -> int:
+    # Sonde utilisée par l'installeur : « ce fichier porte-t-il une valeur en
+    # clair ? ». Sort en 0 si oui — la convention du shell, où 0 vaut « vrai ».
+    if len(sys.argv) > 2 and sys.argv[1] == "--porte-une-valeur":
+        cible = Path(sys.argv[2])
+        v = Verificateur(cible.parent)
+        return 0 if v._porte_une_valeur(cible) else 1
     racine = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd()
     return Verificateur(racine).executer()
 
