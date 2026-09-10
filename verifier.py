@@ -47,8 +47,8 @@ VERSION = "1"
 # --- Réglages par défaut, surchargés par .claude/verifier.toml ----------------
 
 ETATS = [
-    "brouillon", "en revue", "approuvé", "en exécution", "livré",
-    "accepté", "réalisé", "actif", "figé", "historique",
+    "brouillon", "en revue", "approuvé", "approuvé, en exécution", "en exécution",
+    "livré", "terminé", "accepté", "réalisé", "actif", "figé", "historique",
 ]
 # `remplacé par X` est reconnu à part : il porte une cible.
 CHAMPS = ["Statut", "Version", "Mise à jour", "Source"]
@@ -414,7 +414,19 @@ class Verificateur:
     # --- délégation : lint, typage, tests ------------------------------------
 
     def deleguer(self) -> None:
+        """Appelle lint, typage et tests — sauf si le projet les enchaîne déjà.
+
+        Un projet dont la cible `verifier` liste elle-même `lint` et `tests` les
+        ferait tourner deux fois : une par cette délégation, une par sa propre
+        chaîne. Constaté sur un dépôt dont la suite prend plusieurs minutes.
+        On lit donc le Makefile pour savoir qui appelle qui, plutôt que de
+        demander au projet de le déclarer et de risquer que ça diverge.
+        """
         cibles = self.conf.get("cibles_deleguees", [])
+        deja = self._verifier_agrege_deja()
+        if deja:
+            print(f"== délégation : sautée — la cible « verifier » enchaîne déjà {deja}")
+            return
         if not cibles:
             self.avertissements.append(
                 "Aucune cible déléguée dans .claude/verifier.toml : le lint et le typage "
@@ -431,6 +443,19 @@ class Verificateur:
                     + (r.stdout + r.stderr).strip()[-1500:]
                 )
         print(f"== délégation : {len(cibles)} cible(s) — {', '.join(cibles)}")
+
+    def _verifier_agrege_deja(self) -> str:
+        """Ce que la cible `verifier` du projet enchaîne, hors la part documentaire."""
+        mk = self.racine / "Makefile"
+        if not mk.is_file():
+            return ""
+        for ligne in mk.read_text(encoding="utf-8", errors="ignore").splitlines():
+            m = re.match(r"^verifier:\s*([^#]*)", ligne)
+            if not m:
+                continue
+            deps = [d for d in m.group(1).split() if d != "verifier-docs"]
+            return ", ".join(deps) if deps else ""
+        return ""
 
     # --- le gardien se garde lui-même ----------------------------------------
 
