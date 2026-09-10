@@ -1,0 +1,29 @@
+# Réglages du vérificateur documentaire. C'est ICI qu'on ajuste, jamais dans
+# .claude/outils/verifier.py, qui est un fichier généré et gelé.
+
+# Seuil de lignes de la constitution (classement A1).
+seuil_claude_md = 200
+
+# Racine documentaire du dépôt.
+racine_docs = "docs"
+
+# États admis sur la ligne de statut (classement B2). « remplacé par X » est
+# toujours admis en plus de cette liste.
+etats = [
+  "brouillon", "en revue", "approuvé", "en exécution", "livré",
+  "accepté", "réalisé", "actif", "figé", "historique",
+]
+
+# Cibles make que le vérificateur appelle par délégation : lint, typage, tests
+# (classement D3, ADR-002 décision 10). Sans elles, il avertit — un outil
+# installé mais non branché est une garde qu'on croit avoir.
+# Exemple : cibles_deleguees = ["lint", "typage", "tests"]
+cibles_deleguees = []
+
+# Technologies citées par le CLAUDE.md que la détection ne sait pas voir dans
+# ce dépôt, mais qui sont bien là (règle 9). À n'utiliser que si la détection
+# se trompe, jamais pour faire taire une sur-déclaration réelle.
+technos_declarees = []
+
+# Technologies dont on ne veut pas que la règle 9 se mêle.
+technos_ignorees = []
