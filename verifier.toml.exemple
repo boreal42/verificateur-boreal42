@@ -10,8 +10,8 @@ racine_docs = "docs"
 # États admis sur la ligne de statut (classement B2). « remplacé par X » est
 # toujours admis en plus de cette liste.
 etats = [
-  "brouillon", "en revue", "approuvé", "en exécution", "livré",
-  "accepté", "réalisé", "actif", "figé", "historique",
+  "brouillon", "en revue", "approuvé", "approuvé, en exécution", "en exécution",
+  "livré", "terminé", "accepté", "réalisé", "actif", "figé", "historique",
 ]
 
 # Cibles make que le vérificateur appelle par délégation : lint, typage, tests

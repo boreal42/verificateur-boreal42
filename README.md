@@ -19,7 +19,8 @@ python3 verifier.py [chemin du dépôt]
 7. un lien relatif mort ;
 8. un fichier sensible suivi par git ;
 9. une technologie citée par le fichier de contexte et absente du dépôt ;
-10. un marqueur d'incomplétude resté en place.
+10. un marqueur d'incomplétude resté en place, y compris dans un workflow d'intégration
+    continue.
 
 ## Pourquoi ces dix-là
 
@@ -44,6 +45,26 @@ partagé qui se met à juger le code finit par contredire les gardes du projet.
 
 Il ne juge pas non plus la *qualité* d'un exemple canonique. Il vérifie que le chemin
 existe. Qu'il soit un bon exemple reste une décision humaine.
+
+## La délégation et l'intégration continue
+
+Sur un poste de développement, une seule machine a tout : la délégation y couvre lint,
+typage et tests. Une chaîne d'intégration continue n'est pas cette machine. Elle a un
+poste par chaîne d'outils, et le poste documentaire n'a souvent que Python.
+
+Pour ce cas, et pour lui seul :
+
+```bash
+python3 verifier.py --sans-delegation
+```
+
+Les dix règles documentaires s'appliquent, la délégation est écartée, et le script le dit
+dans sa sortie.
+
+**Ce drapeau n'est pas un moyen de faire taire une garde.** Le poste qui l'emploie doit
+prouver que lint et typage tournent dans un autre poste de la même chaîne. Sans cette
+preuve, on retombe sur l'outil installé mais non branché — le défaut que ce vérificateur
+existe pour rendre visible.
 
 ## Réglages
 

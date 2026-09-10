@@ -9,24 +9,31 @@ Version 1 · 2026-09-10 · Boréal42
 
 Applique dix règles documentaires, et dix seulement. Le lint, le typage et les
 tests restent la responsabilité du projet : ce script les *appelle* par
-délégation, via les cibles déclarées dans `.claude/verifier.toml`. Sans cette
-frontière, un script partagé et les cibles d'un projet finissent par se
+délégation, via les cibles déclarées dans `.claude/verifier.toml` (D1, D3). Sans
+cette frontière, un script partagé et les cibles d'un projet finissent par se
 contredire.
 
-    1. ligne de statut présente, en ligne 3, date au jour           
-    2. état dans la liste fermée                                    
-    3. quatre champs fixes sur la ligne de statut                   
-    4. aucun en-tête YAML `autorite:`                               
-    5. CLAUDE.md sous le seuil de lignes                            
-    6. chemins des exemples canoniques existants                    
-    7. liens relatifs résolus
-    8. aucun fichier sensible suivi par git
+Chaque règle cite la ligne du classement qui la justifie. Une règle démentie par
+l'usage se change en modifiant sa ligne de classement, jamais en la contournant.
+
+    1. ligne de statut présente, en ligne 3, date au jour           B1, B8
+    2. état dans la liste fermée                                    B2
+    3. quatre champs fixes sur la ligne de statut                   B4, B9
+    4. aucun en-tête YAML `autorite:`                               G1
+    5. CLAUDE.md sous le seuil de lignes                            A1
+    6. chemins des exemples canoniques existants                    A6
+    7. liens relatifs résolus                                       B6
+    8. aucun fichier sensible suivi par git                         G14
        — un fichier est sensible quand il CONTIENT un secret, pas quand il en
          porte le nom : les gabarits .env.example sont exclus, et un fichier de
          configuration JSON dont les valeurs sont des références d'environnement
          l'est aussi
-    9. aucune technologie citée par CLAUDE.md et absente du dépôt
-   10. aucun marqueur « À REMPLIR » restant
+    9. aucune technologie citée par CLAUDE.md et absente du dépôt   A5
+   10. aucun marqueur « À REMPLIR » restant, y compris dans les
+       workflows d'intégration continue                             A5, B5
+
+Le classement vit dans l'atelier de configuration, sous
+`docs/discovery/2026-09-09-questions-ouvertes.md`.
 
 Bibliothèque standard seule : la CI ne résout aucune dépendance et n'a besoin
 d'aucun jeton.
@@ -299,6 +306,13 @@ class Verificateur:
         cibles = [self.racine / "CLAUDE.md"]
         if self.docs.is_dir():
             cibles += sorted(self.docs.rglob("*.md"))
+        # Les workflows aussi : le gabarit y laisse un marqueur là où le projet
+        # doit déclarer sa pile. Deux chaînes rouges ont montré qu'un poste sans
+        # les outils du projet ne joue pas ses gardes — il échoue, ou on retire
+        # la garde pour le faire passer. Le marqueur doit donc bloquer.
+        flux = self.racine / ".github" / "workflows"
+        if flux.is_dir():
+            cibles += sorted(flux.glob("*.yml")) + sorted(flux.glob("*.yaml"))
         total = 0
         for p in cibles:
             if not p.is_file():
@@ -493,7 +507,7 @@ class Verificateur:
                     self.erreurs.append(f"{s} : Bash invalide.")
         print(f"== syntaxe : {nj} JSON, {npy} Python, {nsh} Bash")
 
-    def executer(self) -> int:
+    def executer(self, deleguer: bool = True) -> int:
         self.regles_statut()
         self.regle_taille()
         self.regle_a_remplir()
@@ -502,7 +516,10 @@ class Verificateur:
         self.regle_syntaxe(suivis)
         self.regle_coherence_pile()
         self.regle_robot_vivant()
-        self.deleguer()
+        if deleguer:
+            self.deleguer()
+        else:
+            print("== délégation : écartée par --sans-delegation")
 
         for a in self.avertissements:
             print(f"\n⚠  {a}")
@@ -522,8 +539,19 @@ def main() -> int:
         cible = Path(sys.argv[2])
         v = Verificateur(cible.parent)
         return 0 if v._porte_une_valeur(cible) else 1
-    racine = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd()
-    return Verificateur(racine).executer()
+    # `--sans-delegation` : n'applique que les dix règles documentaires, sans
+    # appeler lint, typage ni tests. Destiné au seul contexte où la chaîne
+    # d'intégration a déjà un poste dédié à ces outils, et où le poste
+    # documentaire n'a ni la pile ni les dépendances pour les lancer.
+    #
+    # Ce n'est PAS un moyen de faire taire une garde : le poste qui l'emploie
+    # doit prouver que lint et typage tournent ailleurs dans la même chaîne.
+    # Sans cette preuve, on retombe sur l'outil installé mais non branché.
+    args = sys.argv[1:]
+    deleguer = "--sans-delegation" not in args
+    args = [a for a in args if not a.startswith("--")]
+    racine = Path(args[0]).resolve() if args else Path.cwd()
+    return Verificateur(racine).executer(deleguer=deleguer)
 
 
 if __name__ == "__main__":
